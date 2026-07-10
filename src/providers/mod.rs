@@ -11,6 +11,7 @@ pub mod nomic;
 pub mod openai;
 pub mod openrouter;
 pub mod together;
+pub mod vercel;
 pub mod voyageai;
 
 use async_trait::async_trait;
@@ -29,6 +30,7 @@ pub use nomic::NomicProvider;
 pub use openai::OpenAIProvider;
 pub use openrouter::OpenRouterProvider;
 pub use together::TogetherProvider;
+pub use vercel::VercelProvider;
 pub use voyageai::VoyageAIProvider;
 
 /// Trait for embedding providers.

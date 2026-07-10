@@ -47,6 +47,7 @@
 //! | Nomic | `NOMIC_API_KEY` |
 //! | DeepInfra | `DEEPINFRA_API_KEY` |
 //! | OpenRouter | `OPENROUTER_API_KEY` |
+//! | Vercel AI Gateway | `AI_GATEWAY_API_KEY` |
 //! | Cloudflare | `CLOUDFLARE_API_TOKEN` + `CLOUDFLARE_ACCOUNT_ID` |
 
 pub mod catalog;

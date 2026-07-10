@@ -1661,6 +1661,146 @@
       "release_date": "2024-01-10"
     }
   ],
+  "vercel": [
+    {
+      "name": "openai/text-embedding-3-large",
+      "provider": "vercel",
+      "dimensions": 3072,
+      "max_input_tokens": 8191,
+      "cost_per_million_tokens": null,
+      "modalities": [
+        "text"
+      ],
+      "quantizations": [
+        "float"
+      ],
+      "supports_batching": true,
+      "supports_input_type": false,
+      "supports_dimensions": true,
+      "mteb_score": 79.15,
+      "rteb_score": 63.33,
+      "tokenizer": {
+        "engine": "tiktoken",
+        "name": "cl100k_base"
+      },
+      "release_date": "2024-01-25"
+    },
+    {
+      "name": "openai/text-embedding-3-small",
+      "provider": "vercel",
+      "dimensions": 1536,
+      "max_input_tokens": 8191,
+      "cost_per_million_tokens": null,
+      "modalities": [
+        "text"
+      ],
+      "quantizations": [
+        "float"
+      ],
+      "supports_batching": true,
+      "supports_input_type": false,
+      "supports_dimensions": true,
+      "mteb_score": 77.56,
+      "rteb_score": 56.66,
+      "tokenizer": {
+        "engine": "tiktoken",
+        "name": "cl100k_base"
+      },
+      "release_date": "2024-01-25"
+    },
+    {
+      "name": "openai/text-embedding-ada-002",
+      "provider": "vercel",
+      "dimensions": 1536,
+      "max_input_tokens": 8191,
+      "cost_per_million_tokens": null,
+      "modalities": [
+        "text"
+      ],
+      "quantizations": [
+        "float"
+      ],
+      "supports_batching": true,
+      "supports_input_type": false,
+      "supports_dimensions": false,
+      "mteb_score": 75.79,
+      "rteb_score": null,
+      "tokenizer": {
+        "engine": "tiktoken",
+        "name": "cl100k_base"
+      },
+      "release_date": "2022-12-15"
+    },
+    {
+      "name": "voyage/voyage-3.5",
+      "provider": "vercel",
+      "dimensions": 1024,
+      "max_input_tokens": 32000,
+      "cost_per_million_tokens": null,
+      "modalities": [
+        "text"
+      ],
+      "quantizations": [
+        "float"
+      ],
+      "supports_batching": true,
+      "supports_input_type": true,
+      "supports_dimensions": true,
+      "mteb_score": null,
+      "rteb_score": null,
+      "tokenizer": {
+        "engine": "voyage",
+        "name": "voyage"
+      },
+      "release_date": "2025-01-01"
+    },
+    {
+      "name": "voyage/voyage-3-large",
+      "provider": "vercel",
+      "dimensions": 1024,
+      "max_input_tokens": 32000,
+      "cost_per_million_tokens": null,
+      "modalities": [
+        "text"
+      ],
+      "quantizations": [
+        "float"
+      ],
+      "supports_batching": true,
+      "supports_input_type": true,
+      "supports_dimensions": true,
+      "mteb_score": null,
+      "rteb_score": null,
+      "tokenizer": {
+        "engine": "voyage",
+        "name": "voyage"
+      },
+      "release_date": "2025-01-01"
+    },
+    {
+      "name": "voyage/voyage-code-3",
+      "provider": "vercel",
+      "dimensions": 1024,
+      "max_input_tokens": 32000,
+      "cost_per_million_tokens": null,
+      "modalities": [
+        "text"
+      ],
+      "quantizations": [
+        "float"
+      ],
+      "supports_batching": true,
+      "supports_input_type": true,
+      "supports_dimensions": true,
+      "mteb_score": null,
+      "rteb_score": null,
+      "tokenizer": {
+        "engine": "voyage",
+        "name": "voyage"
+      },
+      "release_date": "2024-01-01"
+    }
+  ],
   "openai": [
     {
       "name": "text-embedding-3-large",
