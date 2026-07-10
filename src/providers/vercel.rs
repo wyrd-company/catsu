@@ -79,17 +79,6 @@ struct VercelUsage {
     total_tokens: u64,
 }
 
-/// Vercel AI Gateway API error response.
-#[derive(Debug, Deserialize)]
-struct VercelErrorResponse {
-    error: VercelError,
-}
-
-#[derive(Debug, Deserialize)]
-struct VercelError {
-    message: String,
-}
-
 #[async_trait]
 impl EmbeddingProvider for VercelProvider {
     fn name(&self) -> &'static str {
@@ -121,6 +110,7 @@ impl EmbeddingProvider for VercelProvider {
         let url = self.base_url.clone();
 
         let start = Instant::now();
+        // HttpClient::send_with_retry maps any non-2xx to ClientError::Api before we see the body.
         let response = self
             .http_client
             .send_with_retry(|client| {
@@ -132,23 +122,8 @@ impl EmbeddingProvider for VercelProvider {
             })
             .await?;
 
-        let status = response.status().as_u16();
         let response_text = response.text().await?;
         let latency_ms = start.elapsed().as_secs_f64() * 1000.0;
-
-        if status != 200 {
-            if let Ok(error_response) = serde_json::from_str::<VercelErrorResponse>(&response_text)
-            {
-                return Err(ClientError::Api {
-                    status,
-                    message: error_response.error.message,
-                });
-            }
-            return Err(ClientError::Api {
-                status,
-                message: response_text,
-            });
-        }
 
         let vercel_response: VercelEmbeddingResponse = serde_json::from_str(&response_text)?;
 
@@ -192,7 +167,11 @@ mod tests {
     use crate::models::InputType;
     use std::io::{Read, Write};
     use std::net::TcpListener;
+    use std::sync::{mpsc, Mutex};
     use std::thread;
+
+    /// Serializes tests that mutate process-global env vars.
+    static ENV_LOCK: Mutex<()> = Mutex::new(());
 
     #[test]
     fn test_name() {
@@ -205,8 +184,7 @@ mod tests {
 
     #[test]
     fn test_from_env_missing_key() {
-        // Ensure the env var is unset for this process check.
-        // SAFETY: tests run single-threaded for this case; we restore afterward.
+        let _guard = ENV_LOCK.lock().unwrap();
         let previous = std::env::var("AI_GATEWAY_API_KEY").ok();
         std::env::remove_var("AI_GATEWAY_API_KEY");
 
@@ -228,15 +206,55 @@ mod tests {
         assert!(calculate_cost("voyage/voyage-3.5", 500).is_none());
     }
 
-    fn spawn_mock_server(status: u16, body: &str) -> String {
+    /// Read a full HTTP/1.1 request (headers + body) from a TCP stream.
+    fn read_http_request(stream: &mut impl Read) -> Vec<u8> {
+        let mut buf = Vec::new();
+        let mut chunk = [0u8; 4096];
+        loop {
+            let n = stream.read(&mut chunk).unwrap();
+            if n == 0 {
+                break;
+            }
+            buf.extend_from_slice(&chunk[..n]);
+            if let Some(header_end) = find_header_end(&buf) {
+                let content_length = parse_content_length(&buf[..header_end]).unwrap_or(0);
+                if buf.len() >= header_end + content_length {
+                    buf.truncate(header_end + content_length);
+                    break;
+                }
+            }
+        }
+        buf
+    }
+
+    fn find_header_end(buf: &[u8]) -> Option<usize> {
+        buf.windows(4).position(|w| w == b"\r\n\r\n").map(|i| i + 4)
+    }
+
+    fn parse_content_length(headers: &[u8]) -> Option<usize> {
+        let headers = std::str::from_utf8(headers).ok()?;
+        for line in headers.lines() {
+            let line = line.trim_end_matches('\r');
+            if let Some(value) = line
+                .strip_prefix("Content-Length:")
+                .or_else(|| line.strip_prefix("content-length:"))
+            {
+                return value.trim().parse().ok();
+            }
+        }
+        None
+    }
+
+    fn spawn_mock_server(status: u16, body: &str) -> (String, mpsc::Receiver<Vec<u8>>) {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let addr = listener.local_addr().unwrap();
         let body = body.to_string();
+        let (tx, rx) = mpsc::channel();
 
         thread::spawn(move || {
             let (mut stream, _) = listener.accept().unwrap();
-            let mut buf = [0u8; 4096];
-            let _ = stream.read(&mut buf);
+            let request = read_http_request(&mut stream);
+            let _ = tx.send(request);
             let response = format!(
                 "HTTP/1.1 {status} OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
                 body.len()
@@ -244,7 +262,53 @@ mod tests {
             let _ = stream.write_all(response.as_bytes());
         });
 
-        format!("http://{addr}/v1/embeddings")
+        (format!("http://{addr}/v1/embeddings"), rx)
+    }
+
+    fn assert_embedding_request(
+        request_bytes: &[u8],
+        expected_key: &str,
+        expected_model: &str,
+        expected_input: &[&str],
+        expected_dimensions: Option<u32>,
+    ) {
+        let request = std::str::from_utf8(request_bytes).expect("request must be utf-8");
+        let (head, body) = request
+            .split_once("\r\n\r\n")
+            .expect("HTTP request must have header/body separator");
+
+        let request_line = head.lines().next().expect("request line");
+        assert!(
+            request_line.starts_with("POST /v1/embeddings "),
+            "expected POST /v1/embeddings, got: {request_line}"
+        );
+
+        let auth_value = format!("Bearer {expected_key}");
+        let has_auth = head.lines().any(|line| {
+            let line = line.trim_end_matches('\r');
+            let Some((name, value)) = line.split_once(':') else {
+                return false;
+            };
+            name.eq_ignore_ascii_case("Authorization") && value.trim() == auth_value
+        });
+        assert!(
+            has_auth,
+            "missing Authorization: Bearer {expected_key} in:\n{head}"
+        );
+
+        let json: serde_json::Value = serde_json::from_str(body).expect("JSON body");
+        assert_eq!(json["model"], expected_model);
+        let input = json["input"]
+            .as_array()
+            .expect("input array")
+            .iter()
+            .map(|v| v.as_str().expect("input string"))
+            .collect::<Vec<_>>();
+        assert_eq!(input, expected_input);
+        match expected_dimensions {
+            Some(dims) => assert_eq!(json["dimensions"], dims),
+            None => assert!(json.get("dimensions").is_none()),
+        }
     }
 
     #[tokio::test]
@@ -258,7 +322,7 @@ mod tests {
             "model": "openai/text-embedding-3-small",
             "usage": {"prompt_tokens": 8, "total_tokens": 8}
         }"#;
-        let url = spawn_mock_server(200, body);
+        let (url, request_rx) = spawn_mock_server(200, body);
 
         let provider = VercelProvider::with_base_url(
             "test-key".to_string(),
@@ -281,6 +345,17 @@ mod tests {
             .await
             .unwrap();
 
+        let request_bytes = request_rx
+            .recv()
+            .expect("mock server should capture request");
+        assert_embedding_request(
+            &request_bytes,
+            "test-key",
+            "openai/text-embedding-3-small",
+            &["hello", "world"],
+            Some(3),
+        );
+
         assert_eq!(response.provider, "vercel");
         assert_eq!(response.model, "openai/text-embedding-3-small");
         assert_eq!(response.input_count, 2);
@@ -297,7 +372,7 @@ mod tests {
     #[tokio::test]
     async fn test_embed_api_error_with_mock_server() {
         let body = r#"{"error":{"message":"Invalid API key","type":"invalid_request_error"}}"#;
-        let url = spawn_mock_server(401, body);
+        let (url, _request_rx) = spawn_mock_server(401, body);
 
         let provider = VercelProvider::with_base_url(
             "bad-key".to_string(),
